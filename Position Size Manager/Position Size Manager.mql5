@@ -143,11 +143,12 @@ bool CControlsDialog::CreateButton3(void)
 CControlsDialog ExtDialog;
 
 // Inputs
-input double    input_risk_amt=10;          // Risk per trade trade
-input double    input_pointsmulti=10;       // $ per point multiplier
-input int       input_atr_period=19;        // Stoploss: ATR Period 
-input double    input_atr_multi=2.6;        // Stoploss: ATR Multi
-input double    input_rrr=1;                // Risk to reward
+input double    input_risk_amt=50;          // Risk per trade trade
+input double    input_pointsmulti=1;        // $ per point multiplier
+input double    input_max_lot=1;            // Max lot size
+input int       input_atr_period=10;        // Stoploss: ATR Period 
+input double    input_atr_multi=3;          // Stoploss: ATR Multi
+input double    input_rrr=1;                // TP limit: Risk-to-reward
 
 // Handles
 int             handle_atr;
@@ -159,9 +160,12 @@ double          buff_atr[];
 CTrade          m_Trade;
 CPositionInfo   m_Position; 
 
-// To be modified by calc_ordersize()
+// To be modified by calc_ordersize(), called during OnTick()
 double          sl_buffer;
 string          sl_buffer_str;
+double          ordersize;
+double          bidprice;
+double          askprice;
 
 //+------------------------------------------------------------------+
 //| EA Functions
@@ -192,6 +196,9 @@ void OnDeinit(const int reason)
 
 void OnTick() 
 {
+    askprice=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+    bidprice=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+    ordersize = MathMin(calc_ordersize(), input_max_lot);
 }
 
 void OnChartEvent(const int id,         // event ID  
@@ -202,14 +209,14 @@ void OnChartEvent(const int id,         // event ID
     ExtDialog.ChartEvent(id,lparam,dparam,sparam);
 }
 // Helper functions
-double calc_ordersize(double askprice, double bidprice)
+double calc_ordersize()
 {
-    // Comment("DEBUG: SYMBOL_TRADE_CONTRACT_SIZE=" + DoubleToString(SYMBOL_TRADE_CONTRACT_SIZE,2) + "; SWAP RATE="+DoubleToString(SYMBOL_SWAP_LONG,2));
     CopyBuffer(handle_atr, 0, 1, 2, buff_atr);
     sl_buffer = buff_atr[0] * input_atr_multi;
     sl_buffer_str = "ATR("+ IntegerToString(input_atr_period)+") x " + DoubleToString(input_atr_multi,2) + "="+ DoubleToString(sl_buffer,2);
-    Comment(_Symbol + " " + sl_buffer_str + "; $ per point=" + DoubleToString(input_pointsmulti,2));
-    return input_risk_amt / sl_buffer / input_pointsmulti;
+    double output = input_risk_amt / sl_buffer / input_pointsmulti;
+    Comment(_Symbol + " Lot size = " + DoubleToString(NormalizeDouble(output,2)));
+    return output;
 }
 //+------------------------------------------------------------------+
 //| Event handlers
@@ -217,29 +224,21 @@ double calc_ordersize(double askprice, double bidprice)
 
 void CControlsDialog::OnClickButton1_buy(void)
 {   
-    double askprice=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
-    double bidprice=SymbolInfoDouble(_Symbol,SYMBOL_BID);
-    
     while(m_Position.Select(_Symbol) && m_Position.PositionType()==POSITION_TYPE_SELL) {
         m_Trade.PositionClose(_Symbol);
     }
 
-    double ordersize = calc_ordersize(askprice, bidprice);
     double slp = bidprice - sl_buffer;
     double tpp = bidprice + sl_buffer * input_rrr;
     m_Trade.Buy(NormalizeDouble(ordersize,2), _Symbol, NormalizeDouble(bidprice,2), NormalizeDouble(slp,2), NormalizeDouble(tpp,2));
 }
   
 void CControlsDialog::OnClickButton2_sell(void)
-{
-    double askprice=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
-    double bidprice=SymbolInfoDouble(_Symbol,SYMBOL_BID);
-    
+{    
     while(m_Position.Select(_Symbol) && m_Position.PositionType()==POSITION_TYPE_BUY) {
         m_Trade.PositionClose(_Symbol);
     }
     
-    double ordersize = calc_ordersize(askprice, bidprice);
     double slp = askprice + sl_buffer;
     double tpp = askprice - sl_buffer * input_rrr;
     m_Trade.Sell(NormalizeDouble(ordersize,2),_Symbol, NormalizeDouble(askprice,2), NormalizeDouble(slp,2), NormalizeDouble(tpp,2));
